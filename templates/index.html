@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hệ Thống Phân Loại ECG Bằng Deep Learning</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+
+    <style>
+        :root {
+            --primary: #2563eb;
+            --secondary: #1e40af;
+            --success: #16a34a;
+            --danger: #dc2626;
+            --bg: #f4f7fc;
+        }
+
+        body {
+            background: var(--bg);
+            font-family: 'Segoe UI', sans-serif;
+        }
+
+        .navbar {
+            background: linear-gradient(135deg, #2563eb, #4f46e5);
+        }
+
+        .navbar-brand {
+            color: white !important;
+            font-weight: 700;
+            font-size: 1.3rem;
+        }
+
+        .hero {
+            background: linear-gradient(135deg, #2563eb, #4f46e5);
+            color: white;
+            padding: 40px;
+            border-radius: 20px;
+            margin-top: 20px;
+            margin-bottom: 25px;
+            box-shadow: 0 10px 30px rgba(37, 99, 235, 0.25);
+        }
+
+        .hero h1 {
+            font-weight: 700;
+        }
+
+        .card {
+            border: none;
+            border-radius: 20px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, .08);
+        }
+
+        .section-title {
+            font-weight: 700;
+            color: #2563eb;
+        }
+
+        .result-main {
+            border-radius: 20px;
+            padding: 30px;
+            color: white;
+            text-align: center;
+            transition: .3s;
+        }
+
+        .result-normal {
+            background: linear-gradient(135deg, #16a34a, #22c55e);
+        }
+
+        .result-anomaly {
+            background: linear-gradient(135deg, #dc2626, #ef4444);
+        }
+
+        .result-main h2 {
+            font-size: 2rem;
+            font-weight: 700;
+        }
+
+        .result-main h3 {
+            font-size: 1.5rem;
+        }
+
+        .result-main h1 {
+            font-size: 3rem;
+            font-weight: 800;
+        }
+
+        .confidence {
+            font-size: 2rem;
+            font-weight: 700;
+        }
+
+        .metric-card {
+            text-align: center;
+            padding: 20px;
+        }
+
+        .metric-card h3 {
+            font-weight: 700;
+        }
+
+        .metric-card span {
+            font-size: 1.7rem;
+            font-weight: bold;
+            color: #2563eb;
+        }
+
+        .best-card {
+            background: linear-gradient(135deg, #f59e0b, #fbbf24);
+            color: white;
+        }
+
+        .best-card h2 {
+            font-weight: 800;
+        }
+
+        .nav-tabs .nav-link {
+            font-weight: 600;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 450px;
+        }
+
+        .footer {
+            text-align: center;
+            color: #777;
+            margin-top: 40px;
+            padding-bottom: 30px;
+        }
+
+        #predictionResultArea {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+
+    <nav class="navbar navbar-expand-lg">
+        <div class="container">
+            <a class="navbar-brand" href="#">🫀 ECG Điện tâm đồ</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="hero text-center">
+            <h1>Hệ Thống Phân Loại ECG</h1>
+            <p class="mb-0">Phát hiện bất thường ECG bằng BiLSTM, GRU và LSTM</p>
+        </div>
+
+        <ul class="nav nav-tabs mb-4" id="mainTabs">
+            <li class="nav-item">
+                <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#predictTab">🔍 Kiểm Tra ECG</button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link" data-bs-toggle="tab" data-bs-target="#evaluationTab">📊 Đánh Giá Mô Hình</button>
+            </li>
+        </ul>
+
+        <div class="tab-content">
+            <div class="tab-pane fade show active" id="predictTab">
+                <div class="card p-4 mb-4">
+                    <h4 class="section-title">Tải File ECG</h4>
+                    <div class="row g-3">
+                        <div class="col-md-9">
+                            <input type="file" class="form-control" id="ecgFileInput" accept=".csv">
+                        </div>
+                        <div class="col-md-3">
+                            <button class="btn btn-primary w-100" onclick="runPrediction()">Phân Tích ECG</button>
+                        </div>
+                    </div>
+                    <div class="mt-3 text-muted">File CSV phải chứa đúng 140 giá trị ECG.</div>
+                </div>
+
+                <div id="predictionResultArea">
+                    <div class="row mb-4">
+                        <div class="col-lg-8">
+                            <div id="mainResultCard" class="result-main result-normal">
+                                <h2>🏆 Mô Hình Sử Dụng</h2>
+                                <h3>BiLSTM</h3>
+                                <hr>
+                                <h1 id="predictionLabel">-</h1>
+                                <div class="confidence">
+                                    <span id="predictionScore">-</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-lg-4">
+                            <div class="card metric-card mb-3">
+                                <h5>Accuracy</h5>
+                                <span>99.80%</span>
+                            </div>
+                            <div class="card metric-card mb-3">
+                                <h5>F1 Score</h5>
+                                <span>99.76%</span>
+                            </div>
+                            <div class="card metric-card">
+                                <h5>Mô hình</h5>
+                                <span>BiLSTM</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card p-4">
+                        <h4 class="section-title">📈 Tín Hiệu ECG</h4>
+                        <div class="chart-container">
+                            <canvas id="ecgChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tab-pane fade" id="evaluationTab">
+                <div class="row g-4 mb-4">
+                    <div class="col-lg-4">
+                        <div class="card best-card p-4 h-100">
+                            <h4>🏆 Mô Hình Tốt Nhất</h4>
+                            <hr>
+                            <h2 id="bestModelName">-</h2>
+                            <p id="bestModelInfo">-</p>
+                        </div>
+                    </div>
+
+                    <div class="col-lg-8">
+                        <div class="card p-4">
+                            <h4 class="section-title">Bảng Đánh Giá</h4>
+                            <div class="table-responsive">
+                                <table class="table table-bordered table-hover align-middle" id="metricsTable">
+                                    <thead class="table-primary">
+                                        <tr>
+                                            <th>Mô hình</th>
+                                            <th>Accuracy</th>
+                                            <th>Precision</th>
+                                            <th>Recall</th>
+                                            <th>F1 Score</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row g-4 mb-4">
+                    <div class="col-lg-6">
+                        <div class="card p-4">
+                            <h4 class="section-title">📈 Accuracy Comparison</h4>
+                            <div class="chart-container">
+                                <canvas id="accuracyChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-6">
+                        <div class="card p-4">
+                            <h4 class="section-title">📈 F1 Score Comparison</h4>
+                            <div class="chart-container">
+                                <canvas id="f1Chart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card p-4 mb-4">
+                    <h3 class="section-title mb-4">🔥 Ma Trận Nhầm Lẫn (Confusion Matrix)</h3>
+                    <div class="row g-4">
+                        <div class="col-lg-4">
+                            <div class="card p-3">
+                                <h5 class="text-center">BiLSTM</h5>
+                                <div id="cmBiLSTM" style="height:350px;"></div>
+                            </div>
+                        </div>
+                        <div class="col-lg-4">
+                            <div class="card p-3">
+                                <h5 class="text-center">GRU</h5>
+                                <div id="cmGRU" style="height:350px;"></div>
+                            </div>
+                        </div>
+                        <div class="col-lg-4">
+                            <div class="card p-3">
+                                <h5 class="text-center">LSTM</h5>
+                                <div id="cmLSTM" style="height:350px;"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card p-4">
+                    <h4 class="section-title">📋 Kết Luận</h4>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="metric-card">
+                                <h5>BiLSTM</h5>
+                                <span>99.80%</span>
+                                <div>Accuracy</div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="metric-card">
+                                <h5>LSTM</h5>
+                                <span>99.60%</span>
+                                <div>Accuracy</div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="metric-card">
+                                <h5>GRU</h5>
+                                <span>99.20%</span>
+                                <div>Accuracy</div>
+                            </div>
+                        </div>
+                    </div>
+                    <hr>
+                    <p>
+                        Dựa trên kết quả thực nghiệm, mô hình <b>BiLSTM</b> đạt hiệu suất cao nhất trên tập kiểm thử với 
+                        Accuracy = 99.80% và F1 Score = 99.76%. Do đó hệ thống triển khai thực tế sử dụng BiLSTM để thực hiện phân loại ECG.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            © ECG Deep Learning Dashboard
+        </div>
+    </div>
+
+    <script>
+        let ecgChart = null;
+
+        // ======================================
+        // DỰ ĐOÁN ECG TỪ FILE CSV
+        // ======================================
+        async function runPrediction() {
+            const fileInput = document.getElementById("ecgFileInput");
+
+            if (!fileInput.files.length) {
+                alert("Vui lòng chọn file CSV");
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append("file", fileInput.files[0]);
+
+            try {
+                const response = await fetch("/predict_file", {
+                    method: "POST",
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (result.status !== "success") {
+                    alert(result.message);
+                    return;
+                }
+
+                // Hiển thị vùng kết quả dự đoán
+                document.getElementById("predictionResultArea").style.display = "block";
+
+                // Sử dụng kết quả dự đoán của BiLSTM làm mặc định hệ thống chính
+                const pred = result.predictions.BiLSTM;
+                document.getElementById("predictionLabel").innerText = pred.label;
+                document.getElementById("predictionScore").innerText = (pred.score * 100).toFixed(2) + "%";
+
+                const card = document.getElementById("mainResultCard");
+                if (pred.label.includes("Bất thường")) {
+                    card.classList.remove("result-normal");
+                    card.classList.add("result-anomaly");
+                } else {
+                    card.classList.remove("result-anomaly");
+                    card.classList.add("result-normal");
+                }
+
+                // Vẽ biểu đồ tín hiệu chuỗi thời gian ECG nhận được từ Backend
+                drawECGChart(result.signal_data);
+
+            } catch (err) {
+                console.error(err);
+                alert("Không kết nối được Flask Server");
+            }
+        }
+
+        // ======================================
+        // KHỞI TẠO ĐỒ THỊ ECG CHART
+        // ======================================
+        function drawECGChart(data) {
+            const ctx = document.getElementById("ecgChart").getContext("2d");
+
+            if (ecgChart) ecgChart.destroy();
+
+            ecgChart = new Chart(ctx, {
+                type: "line",
+                data: {
+                    labels: Array.from({ length: data.length }, (_, i) => i + 1),
+                    datasets: [{
+                        label: "ECG Signal",
+                        data: data,
+                        borderColor: "#2563eb",
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        tension: 0.35,
+                        fill: false
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: true }
+                    },
+                    scales: {
+                        x: {
+                            title: { display: true, text: "Time Step" }
+                        },
+                        y: {
+                            title: { display: true, text: "Amplitude" }
+                        }
+                    }
+                }
+            });
+        }
+
+        // ======================================
+        // TẢI DỮ LIỆU ĐÁNH GIÁ MÔ HÌNH KHI TRANG LOAD XONG
+        // ======================================
+        document.addEventListener("DOMContentLoaded", loadEvaluation);
+
+        async function loadEvaluation() {
+            try {
+                const response = await fetch("/api/evaluation");
+                const result = await response.json();
+
+                if (result.status !== "success") return;
+
+                const data = result.data;
+
+                createMetricsTable(data);
+                createBestModel(data);
+                createAccuracyChart(data);
+                createF1Chart(data);
+                createHeatmaps(data);
+
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        // ======================================
+        // TẠO BẢNG ĐÁNH GIÁ METRICS TRÊN GIAO DIỆN
+        // ======================================
+        function createMetricsTable(data) {
+            const tbody = document.querySelector("#metricsTable tbody");
+            tbody.innerHTML = "";
+
+            for (const model in data) {
+                tbody.innerHTML += `
+                    <tr>
+                        <td><b>${model}</b></td>
+                        <td>${(data[model].Accuracy * 100).toFixed(2)}%</td>
+                        <td>${(data[model].Precision * 100).toFixed(2)}%</td>
+                        <td>${(data[model].Recall * 100).toFixed(2)}%</td>
+                        <td>${(data[model].F1 * 100).toFixed(2)}%</td>
+                    </tr>
+                `;
+            }
+        }
+
+        // ======================================
+        // TÌM VÀ HIỂN THỊ MÔ HÌNH TỐT NHẤT TỰ ĐỘNG
+        // ======================================
+        function createBestModel(data) {
+            let best = null;
+
+            for (const model in data) {
+                if (best === null || data[model].Accuracy > data[best].Accuracy) {
+                    best = model;
+                }
+            }
+
+            document.getElementById("bestModelName").innerText = best;
+            document.getElementById("bestModelInfo").innerHTML = `
+                Accuracy: <b>${(data[best].Accuracy * 100).toFixed(2)}%</b><br><br>
+                Precision: <b>${(data[best].Precision * 100).toFixed(2)}%</b><br><br>
+                Recall: <b>${(data[best].Recall * 100).toFixed(2)}%</b><br><br>
+                F1: <b>${(data[best].F1 * 100).toFixed(2)}%</b>
+            `;
+        }
+
+        // ======================================
+        // ĐỒ THỊ SO SÁNH ACCURACY
+        // ======================================
+        function createAccuracyChart(data) {
+            const labels = Object.keys(data);
+            const values = labels.map(x => data[x].Accuracy * 100);
+
+            new Chart(document.getElementById("accuracyChart"), {
+                type: "bar",
+                data: {
+                    labels,
+                    datasets: [{
+                        label: "Accuracy (%)",
+                        data: values,
+                        backgroundColor: "rgba(37, 99, 235, 0.8)"
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: false, min: 95, max: 100 }
+                    }
+                }
+            });
+        }
+
+        // ======================================
+        // ĐỒ THỊ SO SÁNH F1-SCORE
+        // ======================================
+        function createF1Chart(data) {
+            const labels = Object.keys(data);
+            const values = labels.map(x => data[x].F1 * 100);
+
+            new Chart(document.getElementById("f1Chart"), {
+                type: "bar",
+                data: {
+                    labels,
+                    datasets: [{
+                        label: "F1 Score (%)",
+                        data: values,
+                        backgroundColor: "rgba(79, 70, 229, 0.8)"
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: false, min: 95, max: 100 }
+                    }
+                }
+            });
+        }
+
+        // ======================================
+        // HÀM VẼ HEATMAP CHUNG CHO CONFUSION MATRIX
+        // ======================================
+        function drawHeatmap(container, matrix, title) {
+            Plotly.newPlot(container, [{
+                z: matrix,
+                type: "heatmap",
+                colorscale: "Blues",
+                showscale: true,
+                text: matrix,
+                texttemplate: "%{text}",
+                textfont: { size: 18 }
+            }], {
+                title: title,
+                margin: { t: 50, l: 50, r: 20, b: 50 },
+                xaxis: { title: "Predicted" },
+                yaxis: { title: "Actual" }
+            }, {
+                responsive: true
+            });
+        }
+
+        // ======================================
+        // KHỞI TẠO 3 BẢN ĐỒ NHIỆT (CONFUSION MATRIXES)
+        // ======================================
+        function createHeatmaps(data) {
+            drawHeatmap("cmBiLSTM", data.BiLSTM.CM, "BiLSTM");
+            drawHeatmap("cmGRU", data.GRU.CM, "GRU");
+            drawHeatmap("cmLSTM", data.LSTM.CM, "LSTM");
+        }
+    </script>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+
+</html>
